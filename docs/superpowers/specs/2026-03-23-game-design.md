@@ -8,7 +8,11 @@
 
 ## Overview
 
-A browser-based 2.5D cosmic "eat-to-grow" game. The player starts as a tiny asteroid and devours surrounding celestial matter to evolve through four stages — Asteroid, Planet, Star, and Black Hole. At each evolution threshold, the game pauses to present a strategic two-choice gate that grants a stat bonus and shapes the player's visual identity. The game ends when the player either reaches Black Hole stage (win) or is devoured by a larger body (loss).
+A browser-based 2.5D cosmic "eat-to-grow" game. The player starts as a tiny asteroid and devours surrounding celestial matter to evolve through four stages — Asteroid, Planet, Star, and Black Hole. At each evolution threshold, the game pauses to present a strategic two-choice gate that grants a stat bonus and shapes the player's visual identity.
+
+Two modes are available at the main menu:
+- **Normal:** Reach Black Hole stage to win. Fixed difficulty curve.
+- **Endless:** No win state. The game continues indefinitely after Black Hole with escalating difficulty. Score and survival time are the only goals.
 
 ---
 
@@ -55,6 +59,21 @@ docs/
 
 ---
 
+## Game Modes
+
+`Game.ts` receives a `mode` value via Phaser scene data: `this.scene.start('Game', { mode: 'normal' | 'endless' })`. `MainMenu` sets this based on the player's button choice. Both modes share all core systems; mode-specific behaviour is gated by a single `this.mode` check in `Game.ts` and `EvolutionSystem`.
+
+| Aspect | Normal | Endless |
+|--------|--------|---------|
+| Win condition | Reach Black Hole (mass ≥ 10000) | None |
+| Loss condition | Get eaten | Get eaten |
+| Post-stage-3 eat/die | N/A (game ends) | Pure mass check only (stage gate dropped) |
+| Difficulty after stage 3 | N/A | NPC mass scales up over time (see Spawn System) |
+| HUD mass bar at stage 3 | N/A | Shows time survived |
+| GameOver screen | Stage reached + score + win/loss label | Time survived + score |
+
+---
+
 ## Stages & Progression
 
 | Stage | Form | Mass range | Eats (stage ≤) | Killed by (stage ≥) |
@@ -62,14 +81,14 @@ docs/
 | 0 | Asteroid | 1–99 | — (only dust/debris) | Stage 1+ |
 | 1 | Planet | 100–999 | Stage 0 | Stage 2+ |
 | 2 | Star | 1000–9999 | Stage 0–1 | Stage 3 |
-| 3 | Black Hole | 10000+ | Stage 0–2 | nothing (win) |
+| 3 | Black Hole | 10000+ | Endless only: all entities (pure mass check) | Endless only: pure mass check |
 
 ### Eat/die rule (two-part check)
 
-Collision resolution uses **both** a stage gate and a mass check:
+Collision resolution uses **both** a stage gate and a mass check, except in Endless mode at stage 3:
 
-1. **Stage gate (hard):** A player on stage N can only eat entities of stage ≤ N−1, and is killed by entities of stage ≥ N+1. Same-stage collisions proceed to the mass check.
-2. **Mass check (same-stage only):** Player eats a same-stage entity if `player.mass > entity.mass * 1.2`. Player dies to a same-stage entity if `entity.mass > player.mass * 1.2`. Collisions within the 1.2× buffer are ignored (no eat, no death).
+1. **Stage gate (hard):** A player on stage N can only eat entities of stage ≤ N−1, and is killed by entities of stage ≥ N+1. Same-stage collisions proceed to the mass check. **Exception:** in Endless mode once the player is stage 3, the stage gate is dropped entirely — all collisions use the mass check only. This means a sufficiently massive stage-3 NPC can kill the player. In Normal mode, stage 3 is never reached as a playable state — the game ends when the final gate closes (see Win & Loss Conditions).
+2. **Mass check:** Player eats an entity if `player.mass > entity.mass * 1.2`. Player dies if `entity.mass > player.mass * 1.2`. Collisions within the 1.2× buffer are ignored.
 
 **Mass absorption:** On eat, `player.mass += entity.mass * 0.7 * player.state.massGainRate` (0.7 is the base absorption factor; `massGainRate` compounds on top of it, defaulting to 1.0).
 
@@ -161,7 +180,7 @@ Phaser's input manager abstracts mouse and touch through the same `Pointer` API.
 Minimal and non-intrusive:
 
 - **Top-left:** current stage name + small icon
-- **Bottom-centre:** thin mass progress bar (distance to next evolution gate)
+- **Bottom-centre:** thin mass progress bar (distance to next evolution gate). In Endless mode, the swap to a time-survived counter (MM:SS) happens the moment `EvolutionGate` closes and `Game` resumes after the final gate — i.e., when `EvolutionSystem` sets stage to 3.
 - **Top-right:** score (total mass consumed)
 
 ---
@@ -172,7 +191,7 @@ Minimal and non-intrusive:
 Preloads all assets (sprites, particle configs). Transitions to `MainMenu`.
 
 ### MainMenu
-Title, "Play" button, brief instructions. Dark nebula background with drifting NPC entities for atmosphere.
+Title, two mode buttons ("Normal" and "Endless"), brief instructions for each. Dark nebula background with drifting NPC entities for atmosphere. Each button calls `this.scene.start('Game', { mode: 'normal' })` or `{ mode: 'endless' }` respectively.
 
 ### Game
 Core loop. When a mass threshold is crossed, calls `this.scene.pause()` on itself then `this.scene.launch('EvolutionGate')`. On player death, transitions to `GameOver`.
@@ -181,14 +200,23 @@ Core loop. When a mass threshold is crossed, calls `this.scene.pause()` on itsel
 Overlay scene launched on top of the paused `Game` scene. On choice selection, applies bonus to `PlayerState`, then calls `this.scene.resume('Game')` and `this.scene.stop()` to return control.
 
 ### GameOver
-Shows: stage reached, final score, cause of death (e.g. "Devoured by a Star"). "Play Again" calls `this.scene.start('Game')` to restart.
+- **Normal mode:** stage reached, final score, outcome label ("Victory" or cause of death e.g. "Devoured by a Star").
+- **Endless mode:** time survived, final score, cause of death.
+- "Play Again" calls `this.scene.start('Game', { mode })` preserving the same mode. "Change Mode" returns to `MainMenu`.
 
 ---
 
 ## Win & Loss Conditions
 
-- **Win:** Reaching mass 10000 triggers the Star → Black Hole evolution gate first. After the player makes their choice and `EvolutionGate` resumes `Game`, `EvolutionSystem` advances the player to stage 3 and immediately transitions to the GameOver victory screen — there is no continued gameplay at stage 3. The gate is the final choice; winning means surviving long enough to reach it.
-- **Loss:** Collision resolution determines player is eaten (higher-stage entity, or same-stage entity with mass > player.mass × 1.2). Trigger death sequence.
+### Normal mode
+- **Win:** Reaching mass 10000 triggers the Star → Black Hole evolution gate. After the player chooses, `EvolutionSystem` advances them to stage 3 and immediately transitions to the GameOver victory screen. Stage 3 is never a playable state in Normal mode — `CollisionSystem` never evaluates eat/die for a stage-3 Normal player.
+- **Loss:** Player is eaten while at stage 0–2 (higher-stage entity via stage gate, or same-stage entity with `entity.mass > player.mass * 1.2`).
+
+### Endless mode
+- **No win condition.** The Star → Black Hole gate still fires at mass 10000 and grants the final evolution choice, but `EvolutionSystem` advances to stage 3 and calls `this.scene.resume('Game')` instead of transitioning to GameOver.
+- **Post-stage-3:** Stage gate is dropped from `CollisionSystem`; all eat/die decisions are pure mass-based (`entity.mass > player.mass * 1.2` to die, `player.mass > entity.mass * 1.2` to eat). `SpawnSystem` activates endless difficulty escalation (see Spawn System). `HUD` replaces mass bar with time-survived counter.
+- **Loss:** Player is eaten via mass-only check. `CollisionSystem` triggers death identically to Normal mode.
+- **Play Again resets all state:** `this.scene.start('Game', { mode: 'endless' })` destroys and recreates the `Game` scene, which re-initialises `SpawnSystem` (including `endlessMultiplier = 1.0`) from scratch. No manual reset is needed.
 
 ---
 
@@ -217,6 +245,13 @@ Shows: stage reached, final score, cause of death (e.g. "Devoured by a Star"). "
 Ranges intentionally overlap between stages to support the same-stage mass check.
 
 - Off-screen entities beyond spawn radius are recycled back to the pool.
+
+### Endless mode difficulty escalation
+
+Active only after the player reaches stage 3 in Endless mode. Both timers start the moment `EvolutionSystem` sets stage to 3 (when the final EvolutionGate closes).
+
+- **Mass multiplier:** Every 30 seconds, `endlessMultiplier` increases by 0.2 (starts at 1.0, no cap — intentionally aggressive). All spawned NPC mass values are multiplied by `endlessMultiplier`.
+- **Stage distribution shift:** Every 60 seconds, the Stage 3 NPC spawn percentage increases by 5%, capped at 60%. The 5% is redistributed proportionally from the remaining non-Stage-3 buckets based on their current values. Buckets have a floor of 0% — once a bucket reaches 0% it no longer contributes to redistribution. Example: if Stage 0 = 0%, Stage 1 = 5%, Stage 2 = 35%, Stage 3 = 60% (capped), no further shift occurs. The initial endless distribution starts at the same table row as Stage 3 from the base distribution (10%/30%/40%/20%) and evolves from there.
 
 ---
 
