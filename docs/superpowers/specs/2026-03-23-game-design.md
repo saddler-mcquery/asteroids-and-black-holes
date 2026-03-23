@@ -57,40 +57,59 @@ docs/
 
 ## Stages & Progression
 
-| Stage | Form | Eats | Killed by |
-|-------|------|------|-----------|
-| 0 | Asteroid | space dust, tiny rocks | planets+ |
-| 1 | Planet | asteroids, small planets | stars+ |
-| 2 | Star | planets, small stars | black holes |
-| 3 | Black Hole | everything | nothing (win state) |
+| Stage | Form | Mass range | Eats (stage ≤) | Killed by (stage ≥) |
+|-------|------|------------|----------------|----------------------|
+| 0 | Asteroid | 1–99 | — (only dust/debris) | Stage 1+ |
+| 1 | Planet | 100–999 | Stage 0 | Stage 2+ |
+| 2 | Star | 1000–9999 | Stage 0–1 | Stage 3 |
+| 3 | Black Hole | 10000+ | Stage 0–2 | nothing (win) |
 
-**Eat/die rule:** Player eats an entity if `player.mass > entity.mass * 1.2`. Player dies if `entity.mass > player.mass * 1.2`. The 1.2 buffer prevents frustrating near-equal collision deaths.
+### Eat/die rule (two-part check)
 
-**Mass absorption:** On eat, `player.mass += entity.mass * 0.7` (partial absorption, not 100%, to slow runaway growth).
+Collision resolution uses **both** a stage gate and a mass check:
+
+1. **Stage gate (hard):** A player on stage N can only eat entities of stage ≤ N−1, and is killed by entities of stage ≥ N+1. Same-stage collisions proceed to the mass check.
+2. **Mass check (same-stage only):** Player eats a same-stage entity if `player.mass > entity.mass * 1.2`. Player dies to a same-stage entity if `entity.mass > player.mass * 1.2`. Collisions within the 1.2× buffer are ignored (no eat, no death).
+
+**Mass absorption:** On eat, `player.mass += entity.mass * 0.7 * player.state.massGainRate` (0.7 is the base absorption factor; `massGainRate` compounds on top of it, defaulting to 1.0).
 
 ---
 
 ## Evolution Gates
 
-Three gates trigger as the player crosses stage mass thresholds. Each gate pauses the game and presents two choices. Choices grant a permanent stat bonus for the rest of the run and alter the player's visual appearance.
+Three gates trigger as the player crosses mass thresholds. Each gate pauses the game and presents two choices. Choices grant a permanent stat bonus and alter the player's visual appearance.
 
-| Gate | Option A | Option B |
-|------|----------|----------|
-| Asteroid → Planet | **Rocky Giant** — +25% mass gain rate | **Volatile Core** — +30% move speed |
-| Planet → Star | **Gas Giant** — +40% collision radius | **Dense Core** — +25% consumption speed |
-| Star → Black Hole | **Red Giant** — +50% gravity pull radius | **Neutron Star** — +40% speed, tighter hitbox |
+| Gate | Threshold | Option A | Option B |
+|------|-----------|----------|----------|
+| Asteroid → Planet | mass ≥ 100 | **Rocky Giant** — +25% `massGainRate` | **Volatile Core** — +30% `speed` |
+| Planet → Star | mass ≥ 1000 | **Gas Giant** — +40% `collisionRadius` | **Dense Core** — reduce eat cooldown from 200ms to 100ms |
+| Star → Black Hole | mass ≥ 10000 | **Red Giant** — sets `pullRadius` to 300px (see Gravity Pull) | **Neutron Star** — +40% `speed`, `collisionRadius` ×0.7 |
 
-**Player state:**
+### Player state
+
 ```typescript
+type EvolutionChoice =
+  | 'rocky-giant' | 'volatile-core'
+  | 'gas-giant'   | 'dense-core'
+  | 'red-giant'   | 'neutron-star';
+
 interface PlayerState {
   mass: number;
   stage: 0 | 1 | 2 | 3;
-  variant: EvolutionChoice[];  // choices made at each gate
-  speed: number;               // derived: base speed + variant bonuses
-  massGainRate: number;        // derived: base rate + variant bonuses
-  collisionRadius: number;     // derived: base radius + variant bonuses
+  choices: EvolutionChoice[];    // one entry per gate crossed
+  speed: number;                 // px/s; base 180, modified by choices
+  massGainRate: number;          // multiplier on absorbed mass; base 1.0
+  collisionRadius: number;       // px; must be kept in sync with Arcade Physics body via Player.syncPhysicsBody()
+  eatCooldownMs: number;         // min ms between eats; base 200
+  pullRadius: number;            // px radius of gravity attraction (Red Giant only); base 0
 }
 ```
+
+`collisionRadius` must be synced to the Arcade Physics body every time it changes. `Player.syncPhysicsBody()` calls `this.body.setCircle(this.state.collisionRadius)` and repositions the body offset accordingly. This must be called after applying any evolution bonus that modifies `collisionRadius`.
+
+### Gravity pull (Red Giant)
+
+When `pullRadius > 0`, each frame `Game.ts` iterates over all active `CelestialBody` instances within `pullRadius` of the player and applies a velocity nudge toward the player: `velocity += normalize(player.pos - entity.pos) * PULL_FORCE * delta`. `PULL_FORCE = 60` px/s². This is implemented in `CollisionSystem.applyGravityPull()`, not in Arcade Physics.
 
 ---
 
@@ -99,10 +118,11 @@ interface PlayerState {
 Each frame in `Game.ts`:
 
 1. Move player toward pointer position (lerped — floaty, not instant)
-2. `SpawnSystem` checks entity density; spawns/recycles entities at viewport edges
-3. `CollisionSystem` resolves arcade overlaps — eat or die
-4. `EvolutionSystem` checks mass thresholds; triggers `EvolutionGate` scene if crossed
-5. `HUD` updates mass bar progress and score
+2. `CollisionSystem.applyGravityPull()` — nudge nearby entities toward player if `pullRadius > 0`
+3. `SpawnSystem.update()` — spawn/recycle entities to maintain target density
+4. `CollisionSystem.resolveOverlaps()` — eat or die via Arcade Physics overlap callbacks
+5. `EvolutionSystem.check()` — if mass ≥ next threshold and gate not yet shown, pause and launch `EvolutionGate`
+6. `HUD.update()` — refresh mass bar and score
 
 ---
 
@@ -121,8 +141,8 @@ Phaser's input manager abstracts mouse and touch through the same `Pointer` API.
 ## Camera & World
 
 - **World size:** 8000×8000px finite space
-- **Camera:** follows player, zooms out smoothly as player mass increases — the viewport reveals more of the world as you grow
-- **Boundary:** soft edge — pushing against world boundary applies a gentle repulsion force, no hard wall
+- **Camera:** follows player; zoom is calculated as `zoom = lerp(currentZoom, BASE_ZOOM / (1 + player.mass / ZOOM_SCALE), 0.02)` where `BASE_ZOOM = 1.0`, `ZOOM_SCALE = 500`. This gives zoom 1.0 at mass 0 and approaches ~0.1 at Black Hole mass. Min zoom clamped at `0.1`, max at `1.0`.
+- **Boundary:** soft edge — when player is within 200px of world edge, a repulsion force of 120 px/s² pushes them back toward centre.
 
 ---
 
@@ -149,35 +169,60 @@ Minimal and non-intrusive:
 ## Scenes
 
 ### Boot
-Preloads all assets (sprites, audio, particle configs). Transitions to `MainMenu`.
+Preloads all assets (sprites, particle configs). Transitions to `MainMenu`.
 
 ### MainMenu
-Title, "Play" button, brief instructions. Dark nebula background with drifting NPC entities in the background for atmosphere.
+Title, "Play" button, brief instructions. Dark nebula background with drifting NPC entities for atmosphere.
 
 ### Game
-Core loop. Launches `EvolutionGate` as an overlay scene when a threshold is crossed. On player death, transitions to `GameOver`.
+Core loop. When a mass threshold is crossed, calls `this.scene.pause()` on itself then `this.scene.launch('EvolutionGate')`. On player death, transitions to `GameOver`.
 
 ### EvolutionGate
-Overlay scene (does not replace `Game`). Pauses `Game` physics and update. Shows animated gate UI with two choice cards. On selection, applies bonus to player state, resumes `Game`.
+Overlay scene launched on top of the paused `Game` scene. On choice selection, applies bonus to `PlayerState`, then calls `this.scene.resume('Game')` and `this.scene.stop()` to return control.
 
 ### GameOver
-Shows: stage reached, final score, cause of death (e.g. "Devoured by a Star"). "Play Again" restarts `Game` scene.
+Shows: stage reached, final score, cause of death (e.g. "Devoured by a Star"). "Play Again" calls `this.scene.start('Game')` to restart.
 
 ---
 
 ## Win & Loss Conditions
 
-- **Win:** Player reaches Black Hole stage (stage 3). Show victory variant of GameOver screen.
-- **Loss:** Entity with `mass > player.mass * 1.2` overlaps player. Trigger death sequence.
+- **Win:** Reaching mass 10000 triggers the Star → Black Hole evolution gate first. After the player makes their choice and `EvolutionGate` resumes `Game`, `EvolutionSystem` advances the player to stage 3 and immediately transitions to the GameOver victory screen — there is no continued gameplay at stage 3. The gate is the final choice; winning means surviving long enough to reach it.
+- **Loss:** Collision resolution determines player is eaten (higher-stage entity, or same-stage entity with mass > player.mass × 1.2). Trigger death sequence.
 
 ---
 
 ## Spawn System
 
-- Maintains a target entity density within a radius around the player (~2× viewport width)
-- Entities spawn at the outer edge of this radius, drifting slowly inward with random velocity
-- Entity stage distribution is weighted by player stage: lower-stage entities are more common, with a small percentage of threatening higher-stage entities
-- Off-screen entities beyond spawn radius are recycled back to the pool
+- **Target density:** 40 active entities within a spawn radius of `2 × max(viewportWidth, viewportHeight)` around the player at all times.
+- Entities spawn at the outer edge of the spawn radius with a slow random inward drift velocity (20–60 px/s).
+- **Stage distribution** (weighted by player stage):
+
+| Player stage | Stage 0 % | Stage 1 % | Stage 2 % | Stage 3 % |
+|-------------|-----------|-----------|-----------|-----------|
+| 0 | 90% | 10% | 0% | 0% |
+| 1 | 60% | 30% | 10% | 0% |
+| 2 | 30% | 40% | 25% | 5% |
+| 3 | 10% | 30% | 40% | 20% |
+
+- **NPC mass ranges** (uniform random within range):
+
+| Stage | Mass range |
+|-------|-----------|
+| 0 | 1–99 |
+| 1 | 40–999 |
+| 2 | 400–9999 |
+| 3 | 4000–49999 |
+
+Ranges intentionally overlap between stages to support the same-stage mass check.
+
+- Off-screen entities beyond spawn radius are recycled back to the pool.
+
+---
+
+## Eat Cooldown
+
+To prevent mass-exploitation from rapid-fire eating, each eat event sets a `lastEatTime` timestamp on the player. The `CollisionSystem` ignores overlap events until `now - lastEatTime >= player.state.eatCooldownMs`. Base cooldown is 200ms; Dense Core reduces this to 100ms.
 
 ---
 
