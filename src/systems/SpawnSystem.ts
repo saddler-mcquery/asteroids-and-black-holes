@@ -115,7 +115,8 @@ export class SpawnSystem {
       if (dx * dx + dy * dy > spawnRadius * spawnRadius * 4) {
         this.npcGroup.remove(e, false, false); // remove from group but don't destroy
         this.pool.release(e);
-        e.setActive(false).setVisible ? (e.setActive(false), e.setVisible(false)) : null;
+        e.setActive(false);
+        e.setVisible(false);
       }
     }
 
