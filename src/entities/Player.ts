@@ -25,9 +25,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'player-0');
-    // @ts-ignore: Phaser type mismatch on state property in 3.90
     scene.add.existing(this);
-    // @ts-ignore: Phaser type mismatch on state property in 3.90
     scene.physics.add.existing(this);
     this.state = createInitialPlayerState();
     this.syncPhysicsBody();

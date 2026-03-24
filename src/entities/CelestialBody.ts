@@ -13,7 +13,7 @@ export class CelestialBody extends Phaser.Physics.Arcade.Sprite {
     this.setActive(false).setVisible(false);
   }
 
-  spawn(x: number, y: number, stage: StageIndex, mass: number): void {
+  spawn(x: number, y: number, stage: StageIndex, mass: number, towardX?: number, towardY?: number): void {
     this.cbStage = stage;
     this.cbMass = mass;
     const def = STAGES[stage];
@@ -23,7 +23,14 @@ export class CelestialBody extends Phaser.Physics.Arcade.Sprite {
     this.setActive(true).setVisible(true);
     (this.body as Phaser.Physics.Arcade.Body).setCircle(radius, -radius, -radius);
     const speed = 20 + Math.random() * 40;
-    const angle = Math.random() * Math.PI * 2;
+    let angle: number;
+    if (towardX !== undefined && towardY !== undefined) {
+      // Drift inward toward the target (player) with a small random spread (±30°)
+      const baseAngle = Math.atan2(towardY - y, towardX - x);
+      angle = baseAngle + (Math.random() - 0.5) * (Math.PI / 3);
+    } else {
+      angle = Math.random() * Math.PI * 2;
+    }
     this.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
     this.setScale(radius / 32);
   }

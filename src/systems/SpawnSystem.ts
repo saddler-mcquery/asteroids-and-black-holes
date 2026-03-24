@@ -66,7 +66,7 @@ export function advanceEndlessPhase(elapsedMsSinceStage3: number): number {
 interface SpawnableEntity {
   x: number;
   y: number;
-  spawn(x: number, y: number, stage: StageIndex, mass: number): void;
+  spawn(x: number, y: number, stage: StageIndex, mass: number, towardX?: number, towardY?: number): void;
   setActive(v: boolean): unknown;
   setVisible(v: boolean): unknown;
 }
@@ -129,7 +129,7 @@ export class SpawnSystem {
       const y = playerY + Math.sin(angle) * spawnRadius;
       const entity = this.pool.acquire();
       this.npcGroup.add(entity); // register with group so overlap detection fires
-      entity.spawn(x, y, stage, mass);
+      entity.spawn(x, y, stage, mass, playerX, playerY);
     }
   }
 
