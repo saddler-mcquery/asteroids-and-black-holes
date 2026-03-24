@@ -80,6 +80,8 @@ export class SpawnSystem {
   private endlessMultiplier = 1.0;
   private stage3EntryTime: number | null = null;
   private lastShiftTick = 0;
+  /** True once the pool has been filled to capacity for the first time. */
+  private initialised = false;
 
   constructor(
     private pool: { active: SpawnableEntity[]; acquire(): SpawnableEntity; release(e: SpawnableEntity): void; releaseAll(): void },
@@ -126,11 +128,18 @@ export class SpawnSystem {
       const stage = this.pickStage(dist);
       const mass = randomNpcMass(stage, this.endlessMultiplier);
       const angle = Math.random() * Math.PI * 2;
-      const x = playerX + Math.cos(angle) * spawnRadius;
-      const y = playerY + Math.sin(angle) * spawnRadius;
+      // Initial population: scatter throughout the radius so the world isn't empty at start.
+      // After that, always spawn at the outer edge so entities drift inward continuously.
+      const r = this.initialised ? spawnRadius : spawnRadius * (0.1 + Math.random() * 0.9);
+      const x = playerX + Math.cos(angle) * r;
+      const y = playerY + Math.sin(angle) * r;
       const entity = this.pool.acquire();
       this.npcGroup.add(entity); // register with group so overlap detection fires
-      entity.spawn(x, y, stage, mass, playerX, playerY);
+      // For the initial scatter, skip inward-aim so nearby entities don't all rush the player
+      entity.spawn(x, y, stage, mass, this.initialised ? playerX : undefined, this.initialised ? playerY : undefined);
+    }
+    if (!this.initialised && this.pool.active.length >= TARGET_DENSITY) {
+      this.initialised = true;
     }
   }
 
@@ -152,5 +161,6 @@ export class SpawnSystem {
     this.endlessMultiplier = 1.0;
     this.stage3EntryTime = null;
     this.lastShiftTick = 0;
+    this.initialised = false;
   }
 }

@@ -7,7 +7,7 @@ const BASE_SPEED = 180;
 
 export function createInitialPlayerState(): PlayerState {
   return {
-    mass: 1,
+    mass: 50,
     stage: 0,
     choices: [],
     speed: BASE_SPEED,
@@ -69,9 +69,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setVelocity(0, 0);
       return;
     }
-    const lerpFactor = Math.min(1, (delta / 1000) * 4);
-    const vx = (dx / dist) * this.state.speed * lerpFactor;
-    const vy = (dy / dist) * this.state.speed * lerpFactor;
-    this.setVelocity(vx, vy);
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const targetVx = (dx / dist) * this.state.speed;
+    const targetVy = (dy / dist) * this.state.speed;
+    // Frame-rate-independent lerp toward full-speed target — gives floaty feel
+    const lerp = 1 - Math.pow(0.04, delta / 1000);
+    body.setVelocity(
+      Phaser.Math.Linear(body.velocity.x, targetVx, lerp),
+      Phaser.Math.Linear(body.velocity.y, targetVy, lerp),
+    );
   }
 }
