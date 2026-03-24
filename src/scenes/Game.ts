@@ -82,11 +82,13 @@ export class Game extends Phaser.Scene {
       delta,
     );
 
-    const { width, height } = this.scale;
+    const zoom = this.cameras.main.zoom;
+    const viewportW = this.scale.width / zoom;
+    const viewportH = this.scale.height / zoom;
     this.spawnSystem.update(
       this.player.state.stage,
       this.player.x, this.player.y,
-      width, height,
+      viewportW, viewportH,
       this.time.now,
     );
 
@@ -111,14 +113,16 @@ export class Game extends Phaser.Scene {
     this.npcGroup.remove(entity, false, false);
     this.pool.release(entity);
     entity.setActive(false).setVisible(false);
-    // Particle burst
-    this.add.particles(entity.x, entity.y, `celestial-${entity.cbStage}`, {
+    // Particle burst — emitter is destroyed after animation to avoid leaking scene objects
+    const emitter = this.add.particles(entity.x, entity.y, `celestial-${entity.cbStage}`, {
       speed: { min: 40, max: 120 },
       lifespan: 400,
       quantity: 8,
       scale: { start: 0.4, end: 0 },
       alpha: { start: 0.8, end: 0 },
-    }).explode(8);
+    });
+    emitter.explode(8);
+    this.time.delayedCall(500, () => emitter.destroy());
   }
 
   private onDie(): void {
@@ -136,7 +140,7 @@ export class Game extends Phaser.Scene {
     });
   }
 
-  private onEvolutionChoice(choice: string, gateIndex: number): void {
+  private onEvolutionChoice(choice: string, _gateIndex: number): void {
     this.player.applyChoice(choice as import('../types').EvolutionChoice);
     this.player.advanceStage();
 
