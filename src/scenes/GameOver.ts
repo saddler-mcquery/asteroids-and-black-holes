@@ -7,7 +7,7 @@ interface GameOverData {
   stage: StageIndex;
   stageName: string;
   stage3ElapsedMs: number;
-  win?: boolean;
+  win: boolean;
 }
 
 const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
@@ -62,8 +62,8 @@ export class GameOver extends Phaser.Scene {
       .setInteractive({ useHandCursor: true })
       .setStrokeStyle(2, 0x8844cc);
     this.add.text(x, y, label, { ...TEXT_STYLE, fontSize: '18px' }).setOrigin(0.5);
-    btn.on('pointerover', () => { btn.fillColor = 0x4a2a7a; });
-    btn.on('pointerout',  () => { btn.fillColor = 0x2a1a4a; });
+    btn.on('pointerover', () => btn.setFillStyle(0x4a2a7a));
+    btn.on('pointerout',  () => btn.setFillStyle(0x2a1a4a));
     btn.on('pointerdown', onClick);
   }
 }

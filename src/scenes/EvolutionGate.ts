@@ -18,6 +18,7 @@ export class EvolutionGate extends Phaser.Scene {
   create(data: GateData): void {
     const { width, height } = this.scale;
     const gate = EVOLUTION_GATES[data.gateIndex];
+    if (!gate) { this.scene.stop(); return; }
 
     // Dark overlay
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.75);
@@ -49,8 +50,8 @@ export class EvolutionGate extends Phaser.Scene {
       .setStrokeStyle(2, 0x6633aa);
     this.add.text(x, y - 40, label, { ...TEXT_STYLE, fontSize: '22px', fontStyle: 'bold' }).setOrigin(0.5);
     this.add.text(x, y + 10, desc, { ...TEXT_STYLE, fontSize: '15px', wordWrap: { width: 260 }, align: 'center' }).setOrigin(0.5);
-    card.on('pointerover', () => { card.fillColor = 0x3a1a6a; });
-    card.on('pointerout',  () => { card.fillColor = 0x1a0a3a; });
+    card.on('pointerover', () => card.setFillStyle(0x3a1a6a));
+    card.on('pointerout',  () => card.setFillStyle(0x1a0a3a));
     card.on('pointerdown', onClick);
   }
 

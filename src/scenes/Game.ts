@@ -136,6 +136,7 @@ export class Game extends Phaser.Scene {
         stage: this.player.state.stage,
         stageName: `Devoured as a ${['Asteroid','Planet','Star','Black Hole'][this.player.state.stage]}`,
         stage3ElapsedMs: this.stage3EntryTime !== null ? this.time.now - this.stage3EntryTime : 0,
+        win: false,
       });
     });
   }
