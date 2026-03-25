@@ -21,7 +21,7 @@ export class CelestialBody extends Phaser.Physics.Arcade.Sprite {
     this.setTexture(`celestial-${stage}`);
     this.setPosition(x, y);
     this.setActive(true).setVisible(true);
-    (this.body as Phaser.Physics.Arcade.Body).setCircle(radius, -radius, -radius);
+    (this.body as Phaser.Physics.Arcade.Body).setCircle(radius, 0, 0);
     const speed = 20 + Math.random() * 40;
     let angle: number;
     if (towardX !== undefined && towardY !== undefined) {

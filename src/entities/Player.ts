@@ -34,9 +34,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   /** Must be called after any change to state.collisionRadius. */
   syncPhysicsBody(): void {
     const r = this.state.collisionRadius;
-    (this.body as Phaser.Physics.Arcade.Body).setCircle(r, -r, -r);
-    this.setScale(r / 32);
+    // offset (0,0): body.center = sprite.center for centered-origin sprites
+    (this.body as Phaser.Physics.Arcade.Body).setCircle(r, 0, 0);
+    this.syncVisualScale();
     this.setTexture(`player-${this.state.stage}`);
+  }
+
+  /** Update sprite scale to reflect current mass — gives visual growth feedback.
+   *  Uses the same radius formula as NPCs so relative sizes are consistent. */
+  private syncVisualScale(): void {
+    const def = STAGES[this.state.stage];
+    const massR = def.baseCollisionRadius * (0.5 + this.state.mass / (def.npcMassRange[1] * 2));
+    // Never appear smaller than the actual physics body
+    this.setScale(Math.max(massR, this.state.collisionRadius) / 32);
   }
 
   applyChoice(choice: EvolutionChoice): void {
@@ -59,6 +69,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       mass: this.state.mass + entityMass * 0.7 * this.state.massGainRate,
       lastEatTime: now,
     };
+    this.syncVisualScale();
   }
 
   moveToward(targetX: number, targetY: number, delta: number): void {
@@ -72,8 +83,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     const targetVx = (dx / dist) * this.state.speed;
     const targetVy = (dy / dist) * this.state.speed;
-    // Frame-rate-independent lerp toward full-speed target — gives floaty feel
-    const lerp = 1 - Math.pow(0.04, delta / 1000);
+    // Frame-rate-independent lerp: -12 constant ≈ 18% per frame at 60fps (~0.2s to full speed)
+    const lerp = 1 - Math.exp(-12 * delta / 1000);
     body.setVelocity(
       Phaser.Math.Linear(body.velocity.x, targetVx, lerp),
       Phaser.Math.Linear(body.velocity.y, targetVy, lerp),
